@@ -14,15 +14,27 @@ import (
 
 func main() {
 	r := mux.NewRouter()
-	r.HandleFunc("/upload", uploadHandler).Methods("POST")
-
-	http.Handle("/", r)
+	r.Use(enableCors)
+	r.HandleFunc("/upload", uploadHandler).Methods("POST", "OPTIONS")
 
 	fmt.Println("Server is running on port 8080...")
-	http.ListenAndServe(":8080", nil)
+	http.ListenAndServe(":8080", r)
 }
 
+func enableCors(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
+
 	// Parse multipart form
 	err := r.ParseMultipartForm(10 << 20) // 10 MB max upload size
 	if err != nil {
@@ -69,7 +81,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	passwords := passwordRegex.FindAllString(fileContent, -1)
 	
 	if len(passwords) > 0 {
-		
+
 		// INSERT FILE INTO ELASTIC SERVICE
 		fmt.Fprintf(w, "Detected passwords:\n%s", passwords)
 	} else {
