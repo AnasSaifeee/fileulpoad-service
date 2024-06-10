@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -52,6 +54,28 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	defer dst.Close()
+
+	// READ FILE'S CONTENT
+	file.Seek(0, io.SeekStart) // Reset the file pointer to the beginning
+	fileBytes, err := ioutil.ReadAll(file)
+	if err != nil {
+		http.Error(w, "Failed to read uploaded file", http.StatusInternalServerError)
+		return
+	}
+	fileContent := string(fileBytes)
+
+	// DETECT PASSWORD USING REGEX
+	passwordRegex := regexp.MustCompile(`\b\S{8,20}\b`)
+	passwords := passwordRegex.FindAllString(fileContent, -1)
+	
+	if len(passwords) > 0 {
+		
+		// INSERT FILE INTO ELASTIC SERVICE
+		fmt.Fprintf(w, "Detected passwords:\n%s", passwords)
+	} else {
+		fmt.Fprintf(w, "No passwords detected in the uploaded file")
+	}
+
 	// Copy the uploaded file to the file on the server
 	_, err = io.Copy(dst, file)
 	if err != nil {
