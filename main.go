@@ -18,10 +18,11 @@ import (
 
 func main() {
     r := mux.NewRouter()
-
+	
     // Define your routes
     r.HandleFunc("/upload", uploadHandler).Methods("POST", "OPTIONS")
-
+	s := r.PathPrefix("/").Subrouter()
+	s.Use(mux.CORSMethodMiddleware(s))
     // Wrap the router with CORS middleware
     loggedRouter := handlers.LoggingHandler(os.Stdout, r)
     corsHandler := handlers.CORS(
