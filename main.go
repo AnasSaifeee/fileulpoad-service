@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,7 +16,7 @@ import (
 )
 
 func main() {
-    r := mux.NewRouter()
+	r := mux.NewRouter()
 	r.Methods("OPTIONS").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Authorization", "*")
@@ -28,41 +27,37 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	})
-	
-    // Define your routes
-    r.HandleFunc("/upload", uploadHandler).Methods("POST", "OPTIONS")
-	r.HandleFunc("/test",test).Methods("GET","OPTIONS")
+
+	// Define your routes
+	r.HandleFunc("/upload", uploadHandler).Methods("POST", "OPTIONS")
 	s := r.PathPrefix("/").Subrouter()
 	s.Use(mux.CORSMethodMiddleware(s))
-    // Wrap the router with CORS middleware
-    loggedRouter := handlers.LoggingHandler(os.Stdout, r)
+	// Wrap the router with CORS middleware
+	loggedRouter := handlers.LoggingHandler(os.Stdout, r)
 	handler := cors.New(cors.Options{
-        AllowedMethods:   []string{"GET", "POST", "OPTIONS", "DELETE", "PATCH", "PUT"},
-        AllowedOrigins:   []string{"*"},
-        AllowCredentials: true,
-        AllowedHeaders:   []string{"*"},
-        ExposedHeaders:   []string{"*"},
-        Debug:            true,
-    }).Handler(loggedRouter)
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS", "DELETE", "PATCH", "PUT"},
+		AllowedOrigins:   []string{"*"},
+		AllowCredentials: true,
+		AllowedHeaders:   []string{"*"},
+		ExposedHeaders:   []string{"*"},
+		Debug:            true,
+	}).Handler(loggedRouter)
 
-    // Create the server with timeouts
-    server := &http.Server{
-        Addr:         ":8080",
-        WriteTimeout: 15 * time.Second,
-        ReadTimeout:  15 * time.Second,
-        IdleTimeout:  60 * time.Second,
-        Handler:      handler, // Use the CORS handler
-    }
+	// Create the server with timeouts
+	server := &http.Server{
+		Addr:         ":8080",
+		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+		Handler:      handler, // Use the CORS handler
+	}
 
-    fmt.Println("Server is running on port 8080...")
-    if err := server.ListenAndServe(); err != nil {
-        fmt.Printf("Failed to start server: %v\n", err)
-    }
+	fmt.Println("Server is running on port 8080...")
+	if err := server.ListenAndServe(); err != nil {
+		fmt.Printf("Failed to start server: %v\n", err)
+	}
 }
-func test(w http.ResponseWriter, r *http.Request){
-	w.WriteHeader(200)
-	w.Write([]byte("success"))
-}
+
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Parse multipart form
@@ -109,7 +104,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	// DETECT PASSWORD USING REGEX
 	passwordRegex := regexp.MustCompile(`\b\S{8,20}\b`)
 	passwords := passwordRegex.FindAllString(fileContent, -1)
-	
+
 	if len(passwords) > 0 {
 
 		// INSERT FILE INTO ELASTIC SERVICE
@@ -140,29 +135,28 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 			},
 			RunId: 1,
 		}
-		fmt.Println("file info is",fileInfo)
-		jsonData, err := json.Marshal(fileInfo)
-		if err != nil {
-			http.Error(w, "Failed to create JSON response", http.StatusInternalServerError)
-			return
-		}
-		
-		endpointURL := "http://localhost:8098/elastic/classification"
-		resp, err := http.Post(endpointURL, "application/json", bytes.NewBuffer(jsonData))
-		if err != nil {
-			http.Error(w, "Failed to send JSON to endpoint", http.StatusInternalServerError)
-			return
-		}
-		defer resp.Body.Close()
+		fmt.Println("file info is", fileInfo)
+		fileInfoArr := []ClassificationLogModel{}
 
-		if resp.StatusCode != http.StatusOK {
-			body, _ := ioutil.ReadAll(resp.Body)
-			http.Error(w, fmt.Sprintf("Failed to send JSON to endpoint: %s", body), http.StatusInternalServerError)
+		// SYNC FUNCTION LOGIC
+		es, err := NewOpenSearchService()
+		if err != nil {
+			http.Error(w, "Error while creating new elastic service", http.StatusInternalServerError)
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(jsonData)
+		err = es.CreateBulkClassificationRecords(fileInfoArr)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		response := map[string]interface{}{
+			"message": "Sync Successful with elastic Server",
+			"data":    nil,
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
 	} else {
 		fmt.Fprintf(w, "No passwords detected in the uploaded file")
 	}
