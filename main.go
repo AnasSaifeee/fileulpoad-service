@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -8,30 +10,39 @@ import (
 	"os"
 	"regexp"
 	"time"
+	
 
+	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 )
 
 func main() {
-	r := mux.NewRouter()
-	r.Use(enableCors)
-	r.HandleFunc("/upload", uploadHandler).Methods("POST", "OPTIONS")
+    r := mux.NewRouter()
 
-	fmt.Println("Server is running on port 8080...")
-	http.ListenAndServe(":8080", r)
-}
+    // Define your routes
+    r.HandleFunc("/upload", uploadHandler).Methods("POST", "OPTIONS")
 
-func enableCors(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+    // Wrap the router with CORS middleware
+    loggedRouter := handlers.LoggingHandler(os.Stdout, r)
+    corsHandler := handlers.CORS(
+        handlers.AllowedHeaders([]string{"*"}),
+        handlers.AllowedMethods([]string{"*"}),
+        handlers.AllowedOrigins([]string{"*"}),
+    )(loggedRouter)
+
+    // Create the server with timeouts
+    server := &http.Server{
+        Addr:         ":8080",
+        WriteTimeout: 15 * time.Second,
+        ReadTimeout:  15 * time.Second,
+        IdleTimeout:  60 * time.Second,
+        Handler:      corsHandler, // Use the CORS handler
+    }
+
+    fmt.Println("Server is running on port 8080...")
+    if err := server.ListenAndServe(); err != nil {
+        fmt.Printf("Failed to start server: %v\n", err)
+    }
 }
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
@@ -84,6 +95,55 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 		// INSERT FILE INTO ELASTIC SERVICE
 		fmt.Fprintf(w, "Detected passwords:\n%s", passwords)
+		fileInfo := ClassificationLogModel{
+			Id:                 fmt.Sprintf("disc%d", time.Now().UnixNano()),
+			Timestamp:          time.Now().UTC().Format(time.RFC3339),
+			TenantId:           1001,
+			JobID:              196,
+			Asset:              fileHeader.Filename,
+			ParentAsset:        "Inline-SampleApp",
+			SourceType:         "SampleApp",
+			RootAsset:          "SampleApp/Folder",
+			ClassificationType: "regex",
+			InfoType:           "file-info",
+			FileIdentifiers:    passwords,
+			Identifiers:        nil,
+			FileSizeInBytes:    fileHeader.Size,
+			AgentID:            100,
+			BlockNum:           -1,
+			LastAccessedAt:     "",
+			LastModifiedAt:     time.Now().UTC().Format(time.RFC3339),
+			Labels: []map[string]interface{}{
+				{
+					"identifiers": "Password",
+					"name":        "Password-policy-test",
+				},
+			},
+			RunId: 1,
+		}
+		fmt.Println("file info is",fileInfo)
+		jsonData, err := json.Marshal(fileInfo)
+		if err != nil {
+			http.Error(w, "Failed to create JSON response", http.StatusInternalServerError)
+			return
+		}
+		
+		endpointURL := "http://localhost:8098/elastic/classification"
+		resp, err := http.Post(endpointURL, "application/json", bytes.NewBuffer(jsonData))
+		if err != nil {
+			http.Error(w, "Failed to send JSON to endpoint", http.StatusInternalServerError)
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := ioutil.ReadAll(resp.Body)
+			http.Error(w, fmt.Sprintf("Failed to send JSON to endpoint: %s", body), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(jsonData)
 	} else {
 		fmt.Fprintf(w, "No passwords detected in the uploaded file")
 	}
