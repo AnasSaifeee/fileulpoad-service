@@ -31,6 +31,7 @@ func main() {
 	
     // Define your routes
     r.HandleFunc("/upload", uploadHandler).Methods("POST", "OPTIONS")
+	r.HandleFunc("/test",test).Methods("GET","OPTIONS")
 	s := r.PathPrefix("/").Subrouter()
 	s.Use(mux.CORSMethodMiddleware(s))
     // Wrap the router with CORS middleware
@@ -57,6 +58,10 @@ func main() {
     if err := server.ListenAndServe(); err != nil {
         fmt.Printf("Failed to start server: %v\n", err)
     }
+}
+func test(w http.ResponseWriter, r *http.Request){
+	w.WriteHeader(200)
+	w.Write([]byte("success"))
 }
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
