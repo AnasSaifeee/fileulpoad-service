@@ -10,14 +10,24 @@ import (
 	"os"
 	"regexp"
 	"time"
-	
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
+	"github.com/rs/cors"
 )
 
 func main() {
     r := mux.NewRouter()
+	r.Methods("OPTIONS").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Authorization", "*")
+		w.Header().Set("Content-Type", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "*")
+		w.Header().Set("Access-Control-Expose-Headers", "*")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	})
 	
     // Define your routes
     r.HandleFunc("/upload", uploadHandler).Methods("POST", "OPTIONS")
@@ -25,11 +35,14 @@ func main() {
 	s.Use(mux.CORSMethodMiddleware(s))
     // Wrap the router with CORS middleware
     loggedRouter := handlers.LoggingHandler(os.Stdout, r)
-    corsHandler := handlers.CORS(
-        handlers.AllowedHeaders([]string{"*"}),
-        handlers.AllowedMethods([]string{"*"}),
-        handlers.AllowedOrigins([]string{"*"}),
-    )(loggedRouter)
+	handler := cors.New(cors.Options{
+        AllowedMethods:   []string{"GET", "POST", "OPTIONS", "DELETE", "PATCH", "PUT"},
+        AllowedOrigins:   []string{"*"},
+        AllowCredentials: true,
+        AllowedHeaders:   []string{"*"},
+        ExposedHeaders:   []string{"*"},
+        Debug:            true,
+    }).Handler(loggedRouter)
 
     // Create the server with timeouts
     server := &http.Server{
@@ -37,7 +50,7 @@ func main() {
         WriteTimeout: 15 * time.Second,
         ReadTimeout:  15 * time.Second,
         IdleTimeout:  60 * time.Second,
-        Handler:      corsHandler, // Use the CORS handler
+        Handler:      handler, // Use the CORS handler
     }
 
     fmt.Println("Server is running on port 8080...")
