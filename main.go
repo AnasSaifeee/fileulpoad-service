@@ -7,7 +7,9 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/gorilla/handlers"
@@ -77,18 +79,40 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Create the uploads folder if it doesn't
 	// already exist
-	err = os.MkdirAll("./uploads", os.ModePerm)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	uploadDir := "./uploads"
+	if _, err := os.Stat(uploadDir); os.IsNotExist(err) {
+		err = os.Mkdir(uploadDir, 0755)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Create a new file in the uploads directory
-	dst, err := os.Create(fmt.Sprintf("./uploads/%d%s", time.Now().UnixNano(), fileHeader.Filename))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+// Construct the file path
+originalFilename := fileHeader.Filename
+filePath := filepath.Join(uploadDir, originalFilename)
+
+// Check if a file with the same name already exists and add suffix if necessary
+counter := 1
+for {
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		break
 	}
+	ext := filepath.Ext(originalFilename)
+	name := strings.TrimSuffix(originalFilename, ext)
+	filePath = filepath.Join(uploadDir, fmt.Sprintf("%s(%d)%s", name, counter, ext))
+	counter++
+}
+
+// Create the new file
+dst, err := os.Create(filePath)
+if err != nil {
+	http.Error(w, err.Error(), http.StatusInternalServerError)
+	return
+}
+defer dst.Close()
+
 
 	defer dst.Close()
 
@@ -106,8 +130,38 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	passwords := passwordRegex.FindAllString(fileContent, -1)
 
 	if len(passwords) > 0 {
+		
+		// identifiersList:=[]map[string]interface{}{}
 
-		// INSERT FILE INTO ELASTIC SERVICE
+		// for _,val:= range passwords{
+
+		// 	newBlock:=map[string]interface{}{
+		// 		"Password":val,
+		// 	}
+		// 	identifiersList=append(identifiersList, newBlock)
+		// }
+		// // INSERT FILE INTO ELASTIC SERVICE
+		// blockInfo := ClassificationLogModel{
+		// 	Id:                 fmt.Sprintf("disc%d", time.Now().UnixNano()),
+		// 	Timestamp:          time.Now().UTC().Format(time.RFC3339),
+		// 	TenantId:           1001,
+		// 	JobID:              196,
+		// 	Asset:              fileHeader.Filename,
+		// 	ParentAsset:        "Inline-SampleApp",
+		// 	SourceType:         "uploadservice",
+		// 	RootAsset:          "SampleApp/Folder",
+		// 	ClassificationType: "regex",
+		// 	InfoType:           "block-info",
+		// 	// FileIdentifiers:    []string{"Password"},
+		// 	Identifiers:        identifiersList,
+		// 	FileSizeInBytes:    fileHeader.Size,
+		// 	AgentID:            100,
+		// 	BlockNum:           1,
+		// 	LastAccessedAt:     time.Now().UTC().Format(time.RFC3339),
+		// 	LastModifiedAt:     time.Now().UTC().Format(time.RFC3339),
+		// 	RunId: 1,
+		// }
+
 		fmt.Fprintf(w, "Detected passwords:\n%s", passwords)
 		fileInfo := ClassificationLogModel{
 			Id:                 fmt.Sprintf("disc%d", time.Now().UnixNano()),
@@ -116,16 +170,16 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 			JobID:              196,
 			Asset:              fileHeader.Filename,
 			ParentAsset:        "Inline-SampleApp",
-			SourceType:         "SampleApp",
+			SourceType:         "uploadservice",
 			RootAsset:          "SampleApp/Folder",
 			ClassificationType: "regex",
 			InfoType:           "file-info",
-			FileIdentifiers:    passwords,
+			FileIdentifiers:    []string{"Password"},
 			Identifiers:        nil,
 			FileSizeInBytes:    fileHeader.Size,
 			AgentID:            100,
 			BlockNum:           -1,
-			LastAccessedAt:     "",
+			LastAccessedAt:     time.Now().UTC().Format(time.RFC3339),
 			LastModifiedAt:     time.Now().UTC().Format(time.RFC3339),
 			Labels: []map[string]interface{}{
 				{
@@ -135,9 +189,10 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 			},
 			RunId: 1,
 		}
-		fmt.Println("file info is", fileInfo)
-		fileInfoArr := []ClassificationLogModel{}
-
+		
+		
+		fileInfoArr := []ClassificationLogModel{fileInfo}
+	
 		// SYNC FUNCTION LOGIC
 		es, err := NewOpenSearchService()
 		if err != nil {

@@ -43,6 +43,8 @@ func CreateOpenSearchClient() (*opensearch.Client, error) {
 		"%v:%v",
 		// utils.GetConfig().Elastic.Host,
 		// utils.GetConfig().Elastic.Port,
+		"https://opensearch.vectoredge.io",
+		"9200",
 	)
 
 
@@ -53,6 +55,8 @@ func CreateOpenSearchClient() (*opensearch.Client, error) {
 		Addresses: []string{openSearchHost},
 		// Username:  utils.GetConfig().Elastic.Username,
 		// Password:  utils.GetConfig().Elastic.Password,
+		Username: "admin",
+		Password:"Rahul@1300",
 	})
 
 	if err != nil {
@@ -74,7 +78,7 @@ func CreateOpenSearchClient() (*opensearch.Client, error) {
 func (es *OpenSearchService) CreateBulkClassificationRecords(
 	classificationRecords []ClassificationLogModel,
 ) error {
-	indexName := "classification"
+	indexName := "ve-classification-1"
 	indexer, err := opensearchutil.NewBulkIndexer(opensearchutil.BulkIndexerConfig{
 		Client:     es.client, // The Elasticsearch client
 		Index:      indexName, // The default index name
